@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: projects
+    // Fields: title, category, image, tags, link, createdAt
+    //
+    // Collection: services
+    // Fields: title, price, description, deliverables, cta, color
+    //
+    // Collection: blogPosts
+    // Fields: title, excerpt, content, category, date, readTime
+    //
+    // Collection: users
+    // Fields: uid, email, displayName, photoURL, role, createdAt
+    //
+    // Collection: orders
+    // Fields: userId, systemType, options, totalPrice, currency, paymentMethod, status, createdAt
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isGmail() {
+      return isAuthenticated() && request.auth.token.email.matches(".*@gmail\\.com$");
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         request.auth.token.email == "tarifgazi9181@gmail.com");
+    }
+
+    function isValidLead(data) {
+      return data.keys().hasAll(['type', 'budget', 'timeline', 'email']) &&
+             data.email is string && data.email.size() < 255 &&
+             data.type is string && data.type.size() < 100 &&
+             data.budget is string && data.budget.size() < 100 &&
+             data.timeline is string && data.timeline.size() < 100;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['userId', 'systemType', 'totalPrice', 'currency', 'status']) &&
+             data.userId == request.auth.uid &&
+             data.totalPrice is number && data.totalPrice >= 0 &&
+             data.currency in ['BDT', 'USD'] &&
+             data.status in ['pending', 'processing', 'completed', 'cancelled'];
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid == request.auth.uid &&
+             data.email.matches(".*@gmail\\.com$") &&
+             data.role == 'user'; // Users can only create themselves as 'user'
+    }
+
+    // Rules
+    match /projects/{projectId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /blogPosts/{postId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /leads/{leadId} {
+      allow create: if isValidLead(request.resource.data);
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow create: if isGmail() && isValidUser(request.resource.data);
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow create: if isGmail() && isValidOrder(request.resource.data);
+      allow read: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    match /visitors/{visitorId} {
+      allow create: if true; // Allow anyone to be tracked
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /chat_messages/{messageId} {
+      allow read: if true;
+      allow create: if isGmail() && 
+        request.resource.data.keys().hasAll(['text', 'uid', 'email', 'timestamp']) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.text is string &&
+        request.resource.data.text.size() < 1000;
+      allow update, delete: if isAdmin();
+    }
+
+    match /otps/{email} {
+      allow create: if request.resource.data.keys().hasAll(['otp', 'expiresAt']) &&
+                    request.resource.data.otp is string &&
+                    request.resource.data.expiresAt is number;
+      allow read: if true;
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

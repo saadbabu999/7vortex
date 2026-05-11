@@ -1,0 +1,5 @@
+{
+  "name": "7VORTEX",
+  "description": "7VORTEX - Premium Digital Solutions, Identity Verification, and Real-time Order Tracking Platform with Admin CMS and Community Insights",
+  "requestFramePermissions": ["camera", "geolocation"]
+}
